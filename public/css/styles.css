@@ -41,6 +41,13 @@ body {
     padding-top: 56px;
 }
 
+.card-footer small {
+    max-width: 70%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .sidebar {
     background-color: var(--sidebar-bg);
     color: var(--sidebar-text);

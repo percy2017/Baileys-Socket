@@ -1,17 +1,15 @@
-// Variables del DOM
 let serverLogList;
 let serverActivityLogStatus;
 let clearLogsBtn;
 let logFilterInput;
 let serverLogActive = true;
-let allLogEntries = []; // Almacenar todas las entradas de log para el filtrado
+let allLogEntries = [];
 
-// Función para aplicar el filtro
 function applyFilter() {
     if (!logFilterInput || !serverLogList) return;
     
     const filterText = logFilterInput.value.toLowerCase();
-    serverLogList.innerHTML = ''; // Limpiar la lista actual
+    serverLogList.innerHTML = '';
 
     const filteredEntries = allLogEntries.filter(logEntry => {
         const logString = JSON.stringify(logEntry).toLowerCase();
@@ -22,11 +20,9 @@ function applyFilter() {
         serverLogList.appendChild(renderLogEntry(logEntry));
     });
 
-    // Asegurar que el scroll esté al final después de filtrar
     serverLogList.scrollTop = serverLogList.scrollHeight;
 }
 
-// Función para aplicar modo oscuro a nuevos elementos
 function applyDarkModeToNewElements(isDarkMode) {
     const preElements = document.querySelectorAll('pre');
     preElements.forEach(el => {
@@ -40,7 +36,6 @@ function applyDarkModeToNewElements(isDarkMode) {
     });
 }
 
-// Helper para formatear la hora
 function formatTime(timestamp) {
     return new Date(timestamp).toLocaleTimeString('es-ES', {
         hour: '2-digit',
@@ -50,11 +45,10 @@ function formatTime(timestamp) {
     });
 }
 
-// Helper para renderizar una entrada de log
 function renderLogEntry(logEntry) {
     const listItem = document.createElement('li');
-    listItem.classList.add('log-entry'); // Añadir clase para facilitar el filtrado
-    listItem.setAttribute('data-log-type', logEntry.type); // Atributo para filtrar por tipo
+    listItem.classList.add('log-entry');
+    listItem.setAttribute('data-log-type', logEntry.type);
 
     const headerDiv = document.createElement('div');
     headerDiv.classList.add('log-entry-header');
@@ -65,7 +59,6 @@ function renderLogEntry(logEntry) {
 
     const typeSpan = document.createElement('span');
     typeSpan.classList.add('log-type', 'badge');
-    // Asignar clases de Bootstrap basadas en el tipo de log
     const typeClassMap = {
         'client_connected': 'bg-success',
         'client_disconnected': 'bg-danger',
@@ -101,23 +94,17 @@ function renderLogEntry(logEntry) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Conectarse al servidor Socket.IO
-    const socket = io();
-    
-    // Inicializar elementos del DOM
+    const socket = io({ transports: ['websocket', 'polling'] });
     serverLogList = document.getElementById('server-log-list');
     serverActivityLogStatus = document.getElementById('server-activity-log-status');
     clearLogsBtn = document.getElementById('clear-logs-btn');
     logFilterInput = document.getElementById('log-filter-input');
-
     socket.on('connect', () => {
         console.log('CLIENTE (navegador): Conectado al servidor Socket.IO con ID:', socket.id);
     });
-
     socket.on('disconnect', () => {
         console.log('CLIENTE (navegador): Desconectado del servidor Socket.IO.');
     });
-
     socket.emit('join_internal_monitor_room', (response) => {
         console.log('Respuesta de join_internal_monitor_room:', response);
         if (response.success) {
@@ -133,26 +120,19 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
-
-    // Escuchar las actualizaciones del monitor de actividad del servidor
     socket.on('socket_monitor_update', (logEntry) => {
         if (serverLogActive && serverLogList) {
             console.log('SERVER_ACTIVITY_LOG:', logEntry);
-            allLogEntries.unshift(logEntry); // Añadir al principio del array
-
-            // Limitar el número de entradas de log en el array para no sobrecargar la memoria
-            if (allLogEntries.length > 200) { // Aumentar el límite para el array
+            allLogEntries.unshift(logEntry);
+            if (allLogEntries.length > 200) {
                 allLogEntries.pop();
             }
-            applyFilter(); // Re-aplicar el filtro para mostrar la nueva entrada
-            
-            // Aplicar modo oscuro a nuevos elementos
+            applyFilter();
             const isDarkMode = document.body.classList.contains('dark-mode');
             applyDarkModeToNewElements(isDarkMode);
         }
     });
 
-    // Limpiar los logs del monitor
     if (clearLogsBtn) {
         clearLogsBtn.addEventListener('click', () => {
             Swal.fire({
@@ -166,8 +146,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 cancelButtonText: 'Cancelar'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    if (serverLogList) serverLogList.innerHTML = ''; // Vacía la lista de logs
-                    allLogEntries = []; // Vacía el array de logs
+                    if (serverLogList) serverLogList.innerHTML = '';
+                    allLogEntries = [];
                     Swal.fire(
                         '¡Limpiado!',
                         'Los logs han sido eliminados.',
@@ -178,12 +158,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Event listener para el filtro de búsqueda
     if (logFilterInput) {
         logFilterInput.addEventListener('input', applyFilter);
     }
     
-    // Apply saved theme
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'dark') {
         document.body.classList.add('dark-mode');
@@ -197,7 +175,6 @@ document.addEventListener('DOMContentLoaded', function() {
         applyDarkModeToNewElements(true);
     }
     
-    // Escuchar cambios de tema
     window.addEventListener('themeChanged', function(e) {
         applyDarkModeToNewElements(e.detail.darkMode);
     });

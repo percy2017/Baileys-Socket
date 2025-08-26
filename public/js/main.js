@@ -1,10 +1,7 @@
-// Variables del DOM
 let sidebarToggle;
 let darkModeToggle;
 
-// Función para aplicar modo oscuro a elementos adicionales
 function applyDarkModeToElements(isDarkMode) {
-    // Aplicar a elementos pre
     const preElements = document.querySelectorAll('pre');
     preElements.forEach(el => {
         if (isDarkMode) {
@@ -14,7 +11,6 @@ function applyDarkModeToElements(isDarkMode) {
         }
     });
     
-    // Aplicar a otros elementos que necesiten ajustes
     const logEntries = document.querySelectorAll('.log-entry');
     logEntries.forEach(entry => {
         if (isDarkMode) {
@@ -26,7 +22,6 @@ function applyDarkModeToElements(isDarkMode) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Inicializar elementos del DOM
     sidebarToggle = document.getElementById('sidebarToggle');
     darkModeToggle = document.getElementById('darkModeToggle');
 

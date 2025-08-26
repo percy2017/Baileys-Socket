@@ -41,38 +41,28 @@
     </div>
 </div>
 
-<!-- Modal para Ver Detalles de Instancia (QR, etc.) -->
-<div class="modal fade" id="instanceDetailModal" tabindex="-1" aria-labelledby="instanceDetailModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg"> <!-- modal-lg para más espacio -->
+<!-- Modal para Ver Código QR -->
+<div class="modal fade" id="qrModal" tabindex="-1" aria-labelledby="qrModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="instanceDetailModalLabel">Detalles de la Instancia</h5>
+                <h5 class="modal-title" id="qrModalLabel">Código QR</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <div class="text-center" id="detail-instance-avatar"></div>
-                <h6>ID: <span id="detail-instance-id"></span></h6>
-                <h6>Estado: <span id="detail-instance-status" class="badge bg-secondary">Desconocido</span></h6>
-                
-                <hr>
-
-                <h6>Código QR</h6>
-                <div id="qr-code-container">
-                    <div id="qr-placeholder" class="text-center text-muted">
-                        Esperando código QR...
-                    </div>
-                    <img id="qr-code-display" src="" alt="Código QR" style="display: none;">
-                    <div id="qr-loading" class="spinner-border text-primary" role="status" style="display: none;">
-                        <span class="visually-hidden">Cargando...</span>
-                    </div>
+            <div class="modal-body text-center">
+                <div id="qr-placeholder" class="text-muted">
+                    Esperando código QR...
                 </div>
-                <div class="text-center mt-2">
+                <img id="qr-code-display" src="" alt="Código QR" style="display: none; max-width: 100%;">
+                <div id="qr-loading" class="spinner-border text-primary" role="status" style="display: none;">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+                <div class="mt-2">
                     <small id="qr-info-text" class="text-muted">Escanea este código QR con tu WhatsApp para vincular la cuenta.</small>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-                <button type="button" class="btn btn-danger" id="delete-instance-btn">Eliminar Instancia</button>
             </div>
         </div>
     </div>

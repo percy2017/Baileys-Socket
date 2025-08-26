@@ -1,26 +1,20 @@
-// Variables para almacenar el estado de las instancias
 let instances = {};
 let currentDetailInstanceId = null;
-
-// Elementos del DOM
+let socket;
 let instancesRow;
 let noInstancesMessage;
 let createInstanceBtn;
 let createInstanceForm;
 let instanceIdInput;
-let detailInstanceIdSpan;
-let detailInstanceStatusSpan;
 let qrPlaceholder;
 let qrCodeDisplay;
-let qrCodeContainer;
 let qrLoading;
 let qrInfoText;
 
-// Función para renderizar las cards de instancias
 function renderInstances() {
     if (!instancesRow) return;
     
-    instancesRow.innerHTML = ''; // Limpiar el contenedor
+    instancesRow.innerHTML = '';
 
     const instanceIds = Object.keys(instances);
 
@@ -36,7 +30,7 @@ function renderInstances() {
     instanceIds.forEach(id => {
         const instance = instances[id];
         const colDiv = document.createElement('div');
-        colDiv.className = 'col-md-4';
+        colDiv.className = 'col-md-4 mb-4';
 
         const cardDiv = document.createElement('div');
         cardDiv.className = 'card instance-card h-100';
@@ -47,35 +41,133 @@ function renderInstances() {
         cardBodyDiv.className = 'card-body';
 
         // Avatar de la instancia
+        const avatarContainer = document.createElement('div');
+        avatarContainer.className = 'd-flex align-items-center mb-3';
+        
         if (instance.profilePictureUrl) {
             const avatarImg = document.createElement('img');
             avatarImg.src = instance.profilePictureUrl;
-            avatarImg.className = 'rounded-circle mb-2';
+            avatarImg.className = 'rounded-circle me-3';
             avatarImg.style.width = '50px';
             avatarImg.style.height = '50px';
             avatarImg.style.objectFit = 'cover';
-            cardBodyDiv.appendChild(avatarImg);
+            avatarContainer.appendChild(avatarImg);
+        } else {
+            // Avatar por defecto
+            const defaultAvatar = document.createElement('div');
+            defaultAvatar.className = 'rounded-circle bg-primary d-flex align-items-center justify-content-center me-3';
+            defaultAvatar.style.width = '50px';
+            defaultAvatar.style.height = '50px';
+            defaultAvatar.innerHTML = '<i class="fas fa-user text-white"></i>';
+            avatarContainer.appendChild(defaultAvatar);
         }
 
+        const userInfoDiv = document.createElement('div');
         const cardTitle = document.createElement('h5');
-        cardTitle.className = 'card-title';
-        cardTitle.textContent = instance.userName || id;
+        cardTitle.className = 'card-title mb-1';
+        cardTitle.textContent = instance.userName || instance.id;
 
-        const cardText = document.createElement('p');
-        cardText.className = 'card-text';
-        // Mostrar un estado simple basado en si hay un QR o no
-        const statusText = instance.qr ? 'QR Generado' : (instance.connected ? 'Conectado' : 'Desconocido');
-        const statusClass = instance.qr ? 'bg-warning' : (instance.connected ? 'bg-success' : 'bg-secondary');
-        // Ajustar el color del texto para modo oscuro
-        const textColorClass = instance.qr ? 'text-dark' : '';
-        cardText.innerHTML = `<strong>Estado:</strong> <span class="badge ${statusClass} ${textColorClass}">${statusText}</span>`;
+        const cardSubtitle = document.createElement('p');
+        cardSubtitle.className = 'card-text text-muted small mb-0';
+        cardSubtitle.textContent = instance.userId || 'ID: ' + instance.id;
+
+        userInfoDiv.appendChild(cardTitle);
+        userInfoDiv.appendChild(cardSubtitle);
+        avatarContainer.appendChild(userInfoDiv);
+        cardBodyDiv.appendChild(avatarContainer);
+
+        // Estado de la instancia
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'd-flex justify-content-between align-items-center mb-3';
+        
+        const statusLabel = document.createElement('span');
+        statusLabel.textContent = 'Estado:';
+        
+        // Mostrar un estado simple basado en el estado real de la instancia
+        let statusText, statusClass, textColorClass = '';
+        console.log(`[DEBUG] Evaluando estado para instancia ${id}:`, {
+            connected: instance.connected,
+            hasQR: !!instance.qr,
+            hasError: !!instance.errorMessage,
+            dbStatus: instance.status
+        });
+        if (instance.connected) {
+            statusText = 'Conectado';
+            statusClass = 'bg-success';
+        } else if (instance.qr) {
+            statusText = 'QR Generado';
+            statusClass = 'bg-warning';
+            textColorClass = 'text-dark';
+        } else if (instance.errorMessage) {
+            statusText = 'Error';
+            statusClass = 'bg-danger';
+        } else if (instance.status === 'connected') {
+            // Usar el estado de la base de datos si no hay otro estado más específico
+            statusText = 'Conectado';
+            statusClass = 'bg-success';
+        } else if (instance.status === 'disconnected') {
+            statusText = 'Desconectado';
+            statusClass = 'bg-secondary';
+        } else {
+            statusText = 'Desconocido';
+            statusClass = 'bg-secondary';
+        }
+        
+        const statusBadge = document.createElement('span');
+        statusBadge.className = `badge ${statusClass} ${textColorClass}`;
+        statusBadge.textContent = statusText;
+        
+        statusDiv.appendChild(statusLabel);
+        statusDiv.appendChild(statusBadge);
+        cardBodyDiv.appendChild(statusDiv);
+
+        // Estadísticas de la instancia
+        const statsDiv = document.createElement('div');
+        statsDiv.className = 'row g-2 mb-3';
+        
+        // Contactos
+        const contactsCol = document.createElement('div');
+        contactsCol.className = 'col-6';
+        const contactsStat = document.createElement('div');
+        contactsStat.className = 'small';
+        contactsStat.innerHTML = `<strong>Contactos:</strong> ${instance.contactsCount !== undefined ? instance.contactsCount : '0'}`;
+        contactsCol.appendChild(contactsStat);
+        statsDiv.appendChild(contactsCol);
+        
+        // Chats
+        const chatsCol = document.createElement('div');
+        chatsCol.className = 'col-6';
+        const chatsStat = document.createElement('div');
+        chatsStat.className = 'small';
+        chatsStat.innerHTML = `<strong>Chats:</strong> ${instance.chatsCount !== undefined ? instance.chatsCount : '0'}`;
+        chatsCol.appendChild(chatsStat);
+        statsDiv.appendChild(chatsCol);
+        
+        // Mensajes (si lo tenemos)
+        const messagesCol = document.createElement('div');
+        messagesCol.className = 'col-6';
+        const messagesStat = document.createElement('div');
+        messagesStat.className = 'small';
+        messagesStat.innerHTML = `<strong>Mensajes:</strong> ${instance.messagesCount !== undefined ? instance.messagesCount : '0'}`;
+        messagesCol.appendChild(messagesStat);
+        statsDiv.appendChild(messagesCol);
+        
+        cardBodyDiv.appendChild(statsDiv);
 
         const cardFooterDiv = document.createElement('div');
         cardFooterDiv.className = 'card-footer d-flex justify-content-between align-items-center';
         
         const footerText = document.createElement('small');
         footerText.className = 'text-muted';
-        footerText.textContent = `Creada: ${instance.createdAt || 'Ahora'}`;
+        // Asegurarse de que la fecha se muestre correctamente
+        const createdAtText = instance.createdAt ? 
+            (typeof instance.createdAt === 'string' ? instance.createdAt : new Date(instance.createdAt).toLocaleString()) : 
+            'Fecha no disponible';
+        footerText.textContent = `Creada: ${createdAtText}`;
+        footerText.style.whiteSpace = 'nowrap';
+        footerText.style.overflow = 'hidden';
+        footerText.style.textOverflow = 'ellipsis';
+        footerText.title = createdAtText; // Mostrar fecha completa al pasar el mouse
 
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
@@ -96,7 +188,9 @@ function renderInstances() {
             }).then((result) => {
                 if (result.isConfirmed) {
                     console.log(`Solicitando eliminación de instancia: ${id}`);
-                    socket.emit('delete_instance', { instanceId: id });
+                    if (socket) {
+                        socket.emit('delete_instance', { instanceId: id });
+                    }
                 }
             });
         };
@@ -104,8 +198,6 @@ function renderInstances() {
         cardFooterDiv.appendChild(footerText);
         cardFooterDiv.appendChild(deleteBtn);
 
-        cardBodyDiv.appendChild(cardTitle);
-        cardBodyDiv.appendChild(cardText);
         cardDiv.appendChild(cardBodyDiv);
         cardDiv.appendChild(cardFooterDiv);
         colDiv.appendChild(cardDiv);
@@ -113,36 +205,15 @@ function renderInstances() {
     });
 }
 
-// Función para mostrar el modal de detalles
 function showInstanceDetails(instanceId) {
     const instance = instances[instanceId];
     if (!instance) return;
 
     currentDetailInstanceId = instanceId;
-    if (detailInstanceIdSpan) {
-        detailInstanceIdSpan.textContent = instance.userName || instanceId;
-    }
     
-    // Actualizar estado
-    const status = instance.qr ? 'QR Generado' : (instance.connected ? 'Conectado' : 'Desconocido');
-    const statusClass = instance.qr ? 'bg-warning' : (instance.connected ? 'bg-success' : 'bg-secondary');
-    // Ajustar el color del texto para modo oscuro
-    const textColorClass = instance.qr ? 'text-dark' : '';
-    if (detailInstanceStatusSpan) {
-        detailInstanceStatusSpan.textContent = status;
-        detailInstanceStatusSpan.className = `badge ${statusClass} ${textColorClass}`;
-    }
-
-    // Mostrar avatar si está disponible
-    const avatarContainer = document.getElementById('detail-instance-avatar');
-    if (avatarContainer) {
-        if (instance.profilePictureUrl) {
-            avatarContainer.innerHTML = `<img src="${instance.profilePictureUrl}" class="rounded-circle mb-2" style="width: 80px; height: 80px; objectFit: cover;">`;
-        } else {
-            avatarContainer.innerHTML = '';
-        }
-    }
-
+    // Mostrar QR en el modal
+    const modal = new bootstrap.Modal(document.getElementById('qrModal'));
+    
     // Manejar visualización del QR
     if (qrCodeDisplay) qrCodeDisplay.style.display = 'none';
     if (qrPlaceholder) qrPlaceholder.style.display = 'block';
@@ -156,23 +227,22 @@ function showInstanceDetails(instanceId) {
             qrCodeDisplay.style.display = 'block';
         }
         if (qrInfoText) qrInfoText.textContent = 'Escanea este código QR con tu WhatsApp para vincular la cuenta.';
-    } else if (!instance.connected) {
-        // Si no está conectado ni tiene QR, mostrar loading
-        if (qrPlaceholder) qrPlaceholder.style.display = 'none';
-        if (qrLoading) qrLoading.style.display = 'block';
-        if (qrInfoText) qrInfoText.textContent = 'Esperando código QR...';
-    } else {
+    } else if (instance.connected) {
         // Si está conectado
         if (qrPlaceholder) qrPlaceholder.textContent = 'Instancia conectada. No se necesita QR.';
-        if (qrInfoText) qrInfoText.textContent = '';
+        if (qrInfoText) qrInfoText.textContent = 'La instancia está conectada y lista para usar.';
+    } else {
+        // Si está desconectado y sin QR
+        if (qrPlaceholder) qrPlaceholder.style.display = 'block';
+        if (qrPlaceholder) qrPlaceholder.textContent = 'No se ha generado un código QR aún.';
+        if (qrLoading) qrLoading.style.display = 'none';
+        if (qrInfoText) qrInfoText.textContent = 'Crea una instancia para generar un código QR.';
     }
 
     // Mostrar el modal
-    const modal = new bootstrap.Modal(document.getElementById('instanceDetailModal'));
     modal.show();
 }
 
-// Función para crear una nueva instancia
 function createNewInstance() {
     const id = instanceIdInput ? instanceIdInput.value.trim() : '';
     if (!id) {
@@ -187,9 +257,10 @@ function createNewInstance() {
     }
 
     console.log(`Solicitando creación de instancia con ID: ${id}`);
-    socket.emit('create_instance', { instanceId: id });
+    if (socket) {
+        socket.emit('create_instance', { instanceId: id });
+    }
     
-    // Cerrar el modal de creación
     const modal = bootstrap.Modal.getInstance(document.getElementById('createInstanceModal'));
     if (modal) {
         modal.hide();
@@ -199,22 +270,51 @@ function createNewInstance() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Conectarse al servidor Socket.IO
-    const socket = io();
-
-    // Inicializar elementos del DOM
     instancesRow = document.getElementById('instances-row');
     noInstancesMessage = document.getElementById('no-instances-message');
     createInstanceBtn = document.getElementById('create-instance-btn');
     createInstanceForm = document.getElementById('create-instance-form');
     instanceIdInput = document.getElementById('instance-id');
-    detailInstanceIdSpan = document.getElementById('detail-instance-id');
-    detailInstanceStatusSpan = document.getElementById('detail-instance-status');
     qrPlaceholder = document.getElementById('qr-placeholder');
     qrCodeDisplay = document.getElementById('qr-code-display');
-    qrCodeContainer = document.getElementById('qr-code-container');
     qrLoading = document.getElementById('qr-loading');
     qrInfoText = document.getElementById('qr-info-text');
+
+    // Conectarse al servidor Socket.IO
+    socket = io({
+        transports: ['websocket', 'polling'],
+        upgrade: true,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        timeout: 20000
+    });
+    
+    // Manejar reconexiones
+    socket.on('connect', () => {
+        console.log('Cliente conectado al servidor Socket.IO con ID:', socket.id);
+        // Solicitar la lista de instancias al conectarse
+        socket.emit('list_instances');
+    });
+    
+    // Manejar desconexiones
+    socket.on('disconnect', (reason) => {
+        console.log('Cliente desconectado del servidor Socket.IO:', reason);
+        // Mostrar mensaje al usuario si la desconexión no es intencional
+        if (reason !== 'io client disconnect') {
+            console.log('Intentando reconectar automáticamente...');
+        }
+    });
+    
+    // Manejar errores de conexión
+    socket.on('connect_error', (error) => {
+        console.error('Error de conexión con el servidor Socket.IO:', error);
+        console.log('Detalles del error:', {
+            message: error.message,
+            type: error.type,
+            description: error.description
+        });
+    });
 
     // Event Listeners
     if (createInstanceBtn) {
@@ -228,16 +328,25 @@ document.addEventListener('DOMContentLoaded', function() {
         socket.emit('list_instances');
     });
 
-    socket.on('instances_list', (list) => {
-        console.log('[UI] Lista de instancias recibida:', list);
-        // Inicializar el objeto instances con los IDs recibidos
+    socket.on('instances_list', (instancesData) => {
+        console.log('[UI] Lista de instancias recibida:', instancesData);
+        // Inicializar el objeto instances con los datos recibidos
         instances = {}; // Limpiar instancias anteriores si las hubiera
-        list.forEach(id => {
-            instances[id] = { id: id, createdAt: new Date().toLocaleString() };
-            // Unirse automáticamente a la sala de cada instancia para recibir actualizaciones
-            console.log(`[UI] Uniéndose a la sala de instancia existente: instance_room_${id}`);
-            socket.emit('join_instance_room', { instanceId: id });
-        });
+        if (instancesData && instancesData.length > 0) {
+            instancesData.forEach(instanceData => {
+                instances[instanceData.id] = { 
+                    id: instanceData.id, 
+                    createdAt: instanceData.created_at ? new Date(instanceData.created_at).toLocaleString() : 'Fecha no disponible',
+                    status: instanceData.status || 'unknown', // Agregar el estado desde la base de datos
+                    userId: instanceData.user_id,
+                    userName: instanceData.user_name,
+                    profilePictureUrl: instanceData.profile_picture_url
+                };
+                // Unirse automáticamente a la sala de cada instancia para recibir actualizaciones
+                console.log(`[UI] Uniéndose a la sala de instancia existente: instance_room_${instanceData.id}`);
+                socket.emit('join_instance_room', { instanceId: instanceData.id });
+            });
+        }
         renderInstances();
     });
 
@@ -269,33 +378,56 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     socket.on('instance_status_update', (data) => {
-         const { instanceId, status } = data;
-         console.log(`Actualización de estado para instancia ${instanceId}: ${status}`);
+         const { instanceId, status, message } = data;
+         console.log(`[DEBUG] Actualización de estado para instancia ${instanceId}: ${status}`, message || '');
          if (instances[instanceId]) {
+             console.log(`[DEBUG] Estado anterior de la instancia:`, {
+                 connected: instances[instanceId].connected,
+                 hasQR: !!instances[instanceId].qr,
+                 hasError: !!instances[instanceId].errorMessage
+             });
+             
+             // Actualizar el estado en la instancia
+             instances[instanceId].status = status;
+             
              if (status === 'open') {
                  instances[instanceId].connected = true;
                  delete instances[instanceId].qr; // Eliminar QR si se conecta
+                 delete instances[instanceId].errorMessage; // Eliminar mensaje de error si estaba presente
+                 console.log(`[DEBUG] Instancia ${instanceId} marcada como conectada`);
              } else if (status === 'close') {
                  instances[instanceId].connected = false;
-                 // Podrías manejar otros estados aquí
+                 // Agregar mensaje de error si está disponible
+                 if (message) {
+                     instances[instanceId].errorMessage = message;
+                 }
+                 console.log(`[DEBUG] Instancia ${instanceId} marcada como desconectada`);
+             } else if (status === 'qr') {
+                 // Mantener el estado QR hasta que se conecte
+                 console.log(`[DEBUG] Instancia ${instanceId} en estado QR`);
+             } else if (status === 'disconnected') {
+                 instances[instanceId].connected = false;
+                 console.log(`[DEBUG] Instancia ${instanceId} desconectada`);
              }
              renderInstances();
              // Si el modal de detalles de esta instancia está abierto, actualizarlo
              if (currentDetailInstanceId === instanceId) {
                  showInstanceDetails(instanceId);
              }
+         } else {
+             console.log(`[DEBUG] Instancia ${instanceId} no encontrada en el estado local`);
          }
     });
 
     // Nuevos eventos para sincronización de datos
     socket.on('profile_info', (data) => {
         const { instanceId, profilePictureUrl, status, userId, userName } = data;
-        console.log(`Información de perfil recibida para instancia ${instanceId}`);
+        console.log(`Información de perfil recibida para instancia ${instanceId}:`, { profilePictureUrl, userName, userId });
         if (instances[instanceId]) {
             instances[instanceId].profilePictureUrl = profilePictureUrl;
             instances[instanceId].status = status;
             instances[instanceId].userId = userId;
-            instances[instanceId].userName = userName;
+            instances[instanceId].userName = userName || userId || instanceId;
             renderInstances();
             // Si el modal de detalles de esta instancia está abierto, actualizarlo
             if (currentDetailInstanceId === instanceId) {
@@ -305,34 +437,39 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     socket.on('contacts_update', (data) => {
-        const { instanceId, contacts } = data;
-        console.log(`Contactos actualizados para instancia ${instanceId}:`, contacts.length);
+        const { instanceId, contacts, count } = data;
+        console.log(`Contactos actualizados para instancia ${instanceId}:`, count);
         if (instances[instanceId]) {
             instances[instanceId].contacts = contacts;
-            // Podemos mostrar esta información en la UI si es necesario
+            instances[instanceId].contactsCount = count;
+            renderInstances();
         }
     });
 
     socket.on('chats_upsert', (data) => {
-        const { instanceId, chats } = data;
-        console.log(`Chats agregados para instancia ${instanceId}:`, chats.length);
+        const { instanceId, chats, count } = data;
+        console.log(`Chats agregados para instancia ${instanceId}:`, count);
         if (instances[instanceId]) {
             // Inicializar el array de chats si no existe
             if (!instances[instanceId].chats) {
                 instances[instanceId].chats = [];
+                instances[instanceId].chatsCount = 0;
             }
             // Agregar los nuevos chats
             instances[instanceId].chats.push(...chats);
+            instances[instanceId].chatsCount += count;
+            renderInstances();
         }
     });
 
     socket.on('chats_update', (data) => {
-        const { instanceId, chats } = data;
-        console.log(`Chats actualizados para instancia ${instanceId}:`, chats.length);
+        const { instanceId, chats, count } = data;
+        console.log(`Chats actualizados para instancia ${instanceId}:`, count);
         if (instances[instanceId]) {
             // Inicializar el array de chats si no existe
             if (!instances[instanceId].chats) {
                 instances[instanceId].chats = [];
+                instances[instanceId].chatsCount = 0;
             }
             // Actualizar los chats existentes
             chats.forEach(chat => {
@@ -341,17 +478,30 @@ document.addEventListener('DOMContentLoaded', function() {
                     instances[instanceId].chats[index] = chat;
                 }
             });
+            renderInstances();
         }
     });
 
     socket.on('chats_delete', (data) => {
-        const { instanceId, chatIds } = data;
-        console.log(`Chats eliminados para instancia ${instanceId}:`, chatIds.length);
+        const { instanceId, chatIds, count } = data;
+        console.log(`Chats eliminados para instancia ${instanceId}:`, count);
         if (instances[instanceId] && instances[instanceId].chats) {
             // Eliminar los chats
             instances[instanceId].chats = instances[instanceId].chats.filter(
                 chat => !chatIds.includes(chat.id)
             );
+            instances[instanceId].chatsCount = Math.max(0, (instances[instanceId].chatsCount || 0) - count);
+            renderInstances();
+        }
+    });
+
+    socket.on('new_message', (data) => {
+        const { instanceId, count } = data;
+        console.log(`Nuevos mensajes para instancia ${instanceId}:`, count);
+        if (instances[instanceId]) {
+            // Actualizar el conteo de mensajes
+            instances[instanceId].messagesCount = (instances[instanceId].messagesCount || 0) + count;
+            renderInstances();
         }
     });
 

@@ -1,0 +1,29 @@
+<%- include('partials/header') %>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><%= title %></h1>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="mb-0">Log de Actividad del Servidor Socket.IO</h2>
+            <button id="clear-logs-btn" class="btn btn-sm btn-outline-danger">Limpiar Logs</button>
+        </div>
+        <div class="card-body">
+            <p class="card-text">Aquí se mostrarán los eventos en tiempo real.</p>
+            
+            <div class="input-group mb-3">
+                <span class="input-group-text" id="filter-addon"><i class="bi bi-search"></i></span>
+                <input type="text" id="log-filter-input" class="form-control" placeholder="Filtrar logs por texto o tipo..." aria-label="Filtrar logs" aria-describedby="filter-addon">
+            </div>
+            <div id="server-activity-log-status" class="mt-2 fst-italic"></div>
+            <div id="server-activity-log" class="log-container border rounded p-3" style="max-height: 500px; overflow-y: auto;">
+                <ul id="server-log-list" class="list-unstyled mb-0"></ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Custom JS for Monitor -->
+<script src="/js/monitor.js"></script>
+<%- include('partials/footer') %>

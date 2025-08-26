@@ -1,0 +1,83 @@
+<%- include('partials/header') %>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><%= title %></h1>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createInstanceModal">
+            Crear Nueva Instancia
+        </button>
+    </div>
+
+    <!-- Contenedor para las instancias -->
+    <div id="instances-row" class="row">
+        <!-- Las cards de instancias se generarán aquí por JavaScript -->
+        <div class="col-12">
+            <p class="text-muted text-center" id="no-instances-message">Cargando instancias...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Crear Nueva Instancia -->
+<div class="modal fade" id="createInstanceModal" tabindex="-1" aria-labelledby="createInstanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createInstanceModalLabel">Crear Nueva Instancia</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="create-instance-form">
+                    <div class="mb-3">
+                        <label for="instance-id" class="form-label">ID de la Instancia</label>
+                        <input type="text" class="form-control" id="instance-id" placeholder="ej: instancia_ventas" required>
+                        <div class="form-text">Un identificador único para esta instancia de WhatsApp.</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="create-instance-btn">Crear</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Ver Detalles de Instancia (QR, etc.) -->
+<div class="modal fade" id="instanceDetailModal" tabindex="-1" aria-labelledby="instanceDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg"> <!-- modal-lg para más espacio -->
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="instanceDetailModalLabel">Detalles de la Instancia</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center" id="detail-instance-avatar"></div>
+                <h6>ID: <span id="detail-instance-id"></span></h6>
+                <h6>Estado: <span id="detail-instance-status" class="badge bg-secondary">Desconocido</span></h6>
+                
+                <hr>
+
+                <h6>Código QR</h6>
+                <div id="qr-code-container">
+                    <div id="qr-placeholder" class="text-center text-muted">
+                        Esperando código QR...
+                    </div>
+                    <img id="qr-code-display" src="" alt="Código QR" style="display: none;">
+                    <div id="qr-loading" class="spinner-border text-primary" role="status" style="display: none;">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                </div>
+                <div class="text-center mt-2">
+                    <small id="qr-info-text" class="text-muted">Escanea este código QR con tu WhatsApp para vincular la cuenta.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-danger" id="delete-instance-btn">Eliminar Instancia</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Custom JS for WhatsApp -->
+<script src="/js/whatsapp.js"></script>
+<%- include('partials/footer') %>

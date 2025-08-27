@@ -6,6 +6,7 @@ import {
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
+  downloadMediaMessage,
 } from "@whiskeysockets/baileys";
 
 import { Boom } from "@hapi/boom";
@@ -21,7 +22,6 @@ const DB_PATH = path.join(__dirname, "whatsapp_instances.db");
 const AUTH_DIR = path.join(__dirname, "auth_info_baileys");
 
 const db = new Database(DB_PATH);
-
 db.exec(`
   CREATE TABLE IF NOT EXISTS instances (
     id TEXT PRIMARY KEY,
@@ -55,8 +55,8 @@ db.exec(`
     name TEXT,
     conversation_timestamp INTEGER,
     unread_count INTEGER,
-    archive BOOLEAN,
-    pinned BOOLEAN,
+    archive INTEGER,
+    pinned INTEGER,
     mute_until INTEGER,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (instance_id) REFERENCES instances (id) ON DELETE CASCADE
@@ -78,6 +78,11 @@ db.exec(`
     FOREIGN KEY (chat_id) REFERENCES chats (id) ON DELETE CASCADE
   )
 `);
+
+const MEDIA_DIR = path.join(__dirname, "public", "media");
+if (!fs.existsSync(MEDIA_DIR)) {
+  fs.mkdirSync(MEDIA_DIR);
+}
 
 const activeInstances = new Map();
 function updateInstanceTimestamp(instanceId) {
@@ -101,6 +106,7 @@ function saveInstanceProfileInfo(instanceId, profileInfo) {
         SET user_id = ?, user_name = ?, profile_picture_url = ?, updated_at = CURRENT_TIMESTAMP 
         WHERE id = ?
     `);
+  console.log(profileInfo)
   updateStmt.run(
     profileInfo.userId,
     profileInfo.userName,
@@ -129,6 +135,7 @@ function deleteInstanceFromDB(instanceId) {
 }
 
 function saveContact(instanceId, contact) {
+  console.log(contact)
   const insertStmt = db.prepare(`
         INSERT OR REPLACE INTO contacts 
         (id, instance_id, name, notify, verified_name, status, picture_url, updated_at)
@@ -147,43 +154,55 @@ function saveContact(instanceId, contact) {
 }
 
 function saveChat(instanceId, chat) {
+  if (!chat.id) return; // Evitar guardar chats sin ID
+
+  console.log(chat)
   const insertStmt = db.prepare(`
         INSERT OR REPLACE INTO chats 
         (id, instance_id, name, conversation_timestamp, unread_count, archive, pinned, mute_until, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `);
+
+  const timestamp = chat.conversationTimestamp;
+
   insertStmt.run(
     chat.id,
     instanceId,
     chat.name || null,
-    chat.conversationTimestamp || null,
+    timestamp && typeof timestamp.toNumber === "function"
+      ? timestamp.toNumber()
+      : timestamp || null,
     chat.unreadCount || 0,
-    chat.archive || false,
-    chat.pinned || false,
+    chat.archive ? 1 : 0,
+    chat.pinned ? 1 : 0,
     chat.muteEndTime || null
   );
-  console.log(`Chat ${chat.id} guardado para instancia ${instanceId}`);
+  // console.log(`Chat ${chat.id} guardado para instancia ${instanceId}`);
 }
 
-function saveMessage(instanceId, message) {
-  // Extraer información relevante del mensaje
+function saveMessage(instanceId, message, mediaPath = null) {
+  console.log(message)
+  // 1. Filtrar mensajes de sistema que no queremos guardar
+  if (!message.message || message.messageStubType) {
+      return;
+  }
+
+  
   const messageId = message.key?.id;
   const chatId = message.key?.remoteJid;
   const senderId = message.key?.participant || message.key?.remoteJid;
-  const messageType =
-    message.messageStubType ||
-    (message.message ? Object.keys(message.message)[0] : "unknown");
+  const messageType = Object.keys(message.message)[0];
 
-  // Extraer contenido según el tipo de mensaje
   let content = "";
-  if (message.message) {
+
+  // 2. CORRECCIÓN: Dar prioridad a la ruta del archivo
+  if (mediaPath) {
+    content = mediaPath; // Usar la ruta del archivo como contenido
+  } else {
+    // Si no hay archivo, buscar texto o leyenda
     const msgContent = message.message[messageType];
     if (msgContent && typeof msgContent === "object") {
-      if (msgContent.text) {
-        content = msgContent.text;
-      } else if (msgContent.caption) {
-        content = msgContent.caption;
-      }
+      content = msgContent.text || msgContent.caption || "";
     } else if (typeof msgContent === "string") {
       content = msgContent;
     }
@@ -192,29 +211,36 @@ function saveMessage(instanceId, message) {
   const timestamp = message.messageTimestamp;
   const status = message.status;
 
-  if (!messageId) {
-    console.warn(
-      `No se puede guardar mensaje sin ID para instancia ${instanceId}`
-    );
+  if (!messageId || !chatId) {
     return;
   }
+
+  const ensureChatStmt = db.prepare(
+    "INSERT OR IGNORE INTO chats (id, instance_id) VALUES (?, ?)"
+  );
+  ensureChatStmt.run(chatId, instanceId);
 
   const insertStmt = db.prepare(`
         INSERT OR REPLACE INTO messages 
         (id, instance_id, chat_id, sender_id, message_type, content, timestamp, status, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `);
+
   insertStmt.run(
     messageId,
     instanceId,
     chatId,
     senderId,
     messageType,
-    content,
-    timestamp,
-    status
+    content, // Esta variable ahora contendrá la ruta o el texto
+    timestamp && typeof timestamp.toNumber === "function"
+      ? timestamp.toNumber()
+      : timestamp || null,
+    status ?? null
   );
-  console.log(`Mensaje ${messageId} guardado para instancia ${instanceId}`);
+  console.log(
+    `Mensaje ${messageId} guardado (Contenido: ${content.substring(0, 50)}...).`
+  );
 }
 
 export async function createInstance(instanceId, io, targetSocketId = null) {
@@ -259,7 +285,7 @@ export async function createInstance(instanceId, io, targetSocketId = null) {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, Pino({ level: "fatal" })),
     },
-    browser: ["Baileys Manager", "Safari", "1.0.0"], // Personaliza el nombre del cliente
+    browser: ["Baileys Manager", "Chrome", "1.0.0"], // Personaliza el nombre del cliente
     printQRInTerminal: false, // Ya no lo necesitamos, lo manejamos por Socket.IO
     syncFullHistory: false, // No sincronizar todo el historial para evitar errores
     markOnlineOnConnect: true, // Marcar como en línea al conectar
@@ -368,7 +394,10 @@ export async function createInstance(instanceId, io, targetSocketId = null) {
       if (instanceData) {
         instanceData.status = "qr";
       }
-
+      io.to(`instance_room_${instanceId}`).emit("instance_status_update", {
+        instanceId,
+        status: "qr",
+      });
       try {
         // Generar una Data URL del QR
         const qrDataUrl = await QRCode.toDataURL(qr);
@@ -410,18 +439,57 @@ export async function createInstance(instanceId, io, targetSocketId = null) {
   sock.ev.on("creds.update", saveCreds);
 
   // 8. Manejar eventos de nuevos mensajes
-  sock.ev.on("messages.upsert", (msgUpsertEvent) => {
-    console.log(
-      `Nuevo mensaje recibido para instancia ${instanceId}:`,
-      msgUpsertEvent.type
-    );
-    // Guardar mensajes en la base de datos
+  sock.ev.on("messages.upsert", async (msgUpsertEvent) => {
     if (msgUpsertEvent.messages && msgUpsertEvent.messages.length > 0) {
-      msgUpsertEvent.messages.forEach((message) => {
-        saveMessage(instanceId, message);
-      });
+      for (const message of msgUpsertEvent.messages) {
+        const messageType = Object.keys(message.message || {})[0];
+        let mediaPath = null; // Esta será la URL para la base de datos
+
+        if (
+          [
+            "imageMessage",
+            "videoMessage",
+            "audioMessage",
+            "documentMessage",
+          ].includes(messageType)
+        ) {
+          try {
+            const buffer = await downloadMediaMessage(message, "buffer", {});
+
+            let extension = "bin";
+            if (messageType === "imageMessage") extension = "jpg";
+            if (messageType === "videoMessage") extension = "mp4";
+            if (messageType === "audioMessage") extension = "ogg";
+            if (messageType === "documentMessage")
+              extension =
+                message.message.documentMessage.mimetype.split("/")[1] || "pdf";
+
+            const fileName = `${message.key.id}.${extension}`;
+
+            // --- CORRECCIÓN CLAVE ---
+            // 1. Ruta para la base de datos (URL pública)
+            mediaPath = `/media/${instanceId}/${fileName}`;
+
+            // 2. Ruta completa del sistema para guardar el archivo
+            const fullPath = path.join(MEDIA_DIR, instanceId, fileName);
+
+            // 3. Crear el directorio si no existe
+            const instanceMediaDir = path.join(MEDIA_DIR, instanceId);
+            if (!fs.existsSync(instanceMediaDir)) {
+              fs.mkdirSync(instanceMediaDir, { recursive: true });
+            }
+
+            fs.writeFileSync(fullPath, buffer);
+            console.log(`Multimedia pública guardada en: ${fullPath}`);
+          } catch (error) {
+            console.error(`Error al descargar multimedia:`, error);
+          }
+        }
+
+        saveMessage(instanceId, message, mediaPath);
+      }
     }
-    // Emitir el mensaje a la sala específica de esta instancia
+
     io.to(`instance_room_${instanceId}`).emit("new_message", {
       instanceId,
       ...msgUpsertEvent,
@@ -528,157 +596,61 @@ export async function createInstance(instanceId, io, targetSocketId = null) {
   console.log(`Instancia ${instanceId} configurada y almacenada en memoria.`);
 }
 
+// En whatsappManager.js
+
 async function syncInstanceData(instanceId, sock, io) {
   try {
-    console.log(
-      `Iniciando sincronización de datos para instancia ${instanceId}`
-    );
+    console.log(`Iniciando sincronización de datos para ${instanceId}`);
+    
+    // Esperar un poco para que el objeto 'user' se popule completamente
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
-    // Obtener información del perfil
-    let profilePictureUrl = null;
-    let status = null;
-    let userName = null;
-    let userId = null;
-
-    try {
-      // Obtener foto de perfil
-      profilePictureUrl = await sock
-        .profilePictureUrl(sock.user.id, "image")
-        .catch(() => null);
-      console.log(
-        `Foto de perfil obtenida para instancia ${instanceId}: ${!!profilePictureUrl}`
-      );
-    } catch (error) {
-      console.warn(
-        `No se pudo obtener foto de perfil para instancia ${instanceId}:`,
-        error.message
-      );
+    const userId = sock.user?.id;
+    if (!userId) {
+        console.warn(`No se pudo obtener el ID de usuario para ${instanceId}. Reintentando en 5 segundos...`);
+        setTimeout(() => syncInstanceData(instanceId, sock, io), 5000);
+        return;
     }
 
-    try {
-      // Obtener estado
-      const statusResult = await sock
-        .fetchStatus(sock.user.id)
-        .catch(() => null);
-      status = statusResult?.status;
-      console.log(`Estado obtenido para instancia ${instanceId}: ${status}`);
-    } catch (error) {
-      console.warn(
-        `No se pudo obtener estado para instancia ${instanceId}:`,
-        error.message
-      );
-    }
+    const profilePictureUrl = await sock.profilePictureUrl(userId, "image").catch(() => null);
+    
+    // Lógica mejorada para obtener el nombre
+    let userName = sock.user?.name || sock.user?.verifiedName || sock.user?.notify || userId.split('@')[0];
 
-    // Obtener nombre real de WhatsApp
-    try {
-      userId = sock.user.id;
-      if (sock.user.name) {
-        userName = sock.user.name;
-      } else if (sock.user.verifiedName) {
-        userName = sock.user.verifiedName;
-      } else if (sock.user.id) {
-        // Extraer número de teléfono del ID
-        userName = sock.user.id.split("@")[0];
-      }
-      console.log(
-        `Nombre de usuario obtenido para instancia ${instanceId}: ${userName}`
-      );
-    } catch (error) {
-      console.warn(
-        `No se pudo obtener nombre de usuario para instancia ${instanceId}:`,
-        error.message
-      );
-      userName = instanceId; // Fallback al ID de la instancia
-    }
+    // Guardar en la DB
+    saveInstanceProfileInfo(instanceId, { userId, userName, profilePictureUrl });
 
-    // Guardar información del perfil en la base de datos
-    saveInstanceProfileInfo(instanceId, {
-      userId,
-      userName,
-      profilePictureUrl,
-    });
-
-    // Emitir información del perfil
+    // Emitir al cliente
     io.to(`instance_room_${instanceId}`).emit("profile_info", {
       instanceId,
       profilePictureUrl,
-      status: status,
-      userId: userId,
-      userName: userName,
+      userId,
+      userName
     });
 
-    // Sincronizar contactos
-    try {
-      console.log(`Sincronizando contactos para instancia ${instanceId}`);
-      // Enviar mensaje al cliente para indicar que comenzará la sincronización de contactos
-      io.to(`instance_room_${instanceId}`).emit("contacts_sync_start", {
-        instanceId,
-      });
+    console.log(`Sincronización completada para ${instanceId}`);
 
-      // Aquí podrías implementar la lógica para obtener y guardar todos los contactos
-      // Por ahora, solo configuramos los listeners para contactos nuevos/actualizados
-      console.log(
-        `Configurando escucha de contactos para instancia ${instanceId}`
-      );
-    } catch (contactsError) {
-      console.warn(
-        `Advertencia al sincronizar contactos para instancia ${instanceId}:`,
-        contactsError.message
-      );
-    }
-
-    // Sincronizar chats
-    try {
-      console.log(`Sincronizando chats para instancia ${instanceId}`);
-      // Enviar mensaje al cliente para indicar que comenzará la sincronización de chats
-      io.to(`instance_room_${instanceId}`).emit("chats_sync_start", {
-        instanceId,
-      });
-
-      // Aquí podrías implementar la lógica para obtener y guardar todos los chats
-      // Por ahora, solo configuramos los listeners para chats nuevos/actualizados
-      console.log(`Configurando escucha de chats para instancia ${instanceId}`);
-    } catch (chatsError) {
-      console.warn(
-        `Advertencia al sincronizar chats para instancia ${instanceId}:`,
-        chatsError.message
-      );
-    }
-
-    // Sincronizar mensajes
-    try {
-      console.log(`Sincronizando mensajes para instancia ${instanceId}`);
-      // Enviar mensaje al cliente para indicar que comenzará la sincronización de mensajes
-      io.to(`instance_room_${instanceId}`).emit("messages_sync_start", {
-        instanceId,
-      });
-
-      // Aquí podrías implementar la lógica para obtener y guardar todos los mensajes
-      // Por ahora, solo configuramos los listeners para mensajes nuevos
-      console.log(
-        `Configurando escucha de mensajes para instancia ${instanceId}`
-      );
-    } catch (messagesError) {
-      console.warn(
-        `Advertencia al sincronizar mensajes para instancia ${instanceId}:`,
-        messagesError.message
-      );
-    }
-
-    console.log(`Sincronización completada para instancia ${instanceId}`);
   } catch (error) {
-    console.error(
-      `Error sincronizando datos para instancia ${instanceId}:`,
-      error
-    );
-    // No lanzamos el error para no interrumpir el flujo principal
+    console.error(`Error crítico sincronizando datos para ${instanceId}:`, error);
   }
 }
 
 export function loadInstancesFromDB() {
-  const selectStmt = db.prepare(
-    "SELECT id, status, user_id, user_name, profile_picture_url, created_at, updated_at FROM instances"
-  );
+  const query = `
+    SELECT 
+      i.id, 
+      i.status, 
+      i.user_id, 
+      i.user_name, 
+      i.profile_picture_url, 
+      i.created_at, 
+      i.updated_at,
+      (SELECT COUNT(*) FROM contacts WHERE instance_id = i.id) as contactsCount,
+      (SELECT COUNT(*) FROM chats WHERE instance_id = i.id) as chatsCount,
+      (SELECT COUNT(*) FROM messages WHERE instance_id = i.id) as messagesCount
+    FROM instances i
+  `;
+  const selectStmt = db.prepare(query);
   return selectStmt.all();
 }
 

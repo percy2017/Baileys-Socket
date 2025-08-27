@@ -1,4 +1,6 @@
 # Dependencias
 /node_modules
 /auth_info_baileys
+/public/media
 QWEN.md
+.env
